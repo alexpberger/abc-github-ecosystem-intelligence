@@ -1,0 +1,96 @@
+{
+  "properties": {
+    "description": "Phase 1 medallion pipeline for Online Retail II. Replace every REPLACE_WITH placeholder before copying this file to fabric/pipelines/pl_retail_medallion.DataPipeline/pipeline-content.json. Do not sync it until the ids are real.",
+    "activities": [
+      {
+        "name": "Bronze ingest",
+        "type": "TridentNotebook",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "notebookId": "REPLACE_WITH_NB_BRONZE_INGEST_ID",
+          "workspaceId": "REPLACE_WITH_WORKSPACE_ID",
+          "parameters": {
+            "ingestion_batch_id": {
+              "value": "online_retail_ii_full",
+              "type": "string"
+            },
+            "source_relative_path": {
+              "value": "Files/raw/online_retail_II.xlsx",
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "Silver clean",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Bronze ingest",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "notebookId": "REPLACE_WITH_NB_SILVER_CLEAN_ID",
+          "workspaceId": "REPLACE_WITH_WORKSPACE_ID"
+        }
+      },
+      {
+        "name": "Gold model",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Silver clean",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "notebookId": "REPLACE_WITH_NB_GOLD_MODEL_ID",
+          "workspaceId": "REPLACE_WITH_WORKSPACE_ID"
+        }
+      },
+      {
+        "name": "Quality checks",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Gold model",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "notebookId": "REPLACE_WITH_NB_QUALITY_CHECKS_ID",
+          "workspaceId": "REPLACE_WITH_WORKSPACE_ID"
+        }
+      }
+    ]
+  }
+}

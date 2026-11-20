@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/platform/platformProperties.json",
+  "config": {
+    "logicalId": "ba29dc87-f551-48a6-914a-c8c66a7cfbc8"
+  },
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_gold_model",
+    "description": "Overwrite the Gold star schema from silver.sales_line."
+  }
+}

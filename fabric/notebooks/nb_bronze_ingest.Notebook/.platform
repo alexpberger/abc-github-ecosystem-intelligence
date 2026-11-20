@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/platform/platformProperties.json",
+  "config": {
+    "logicalId": "166aabf5-9b72-47de-96c7-83f07351ea00"
+  },
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_bronze_ingest",
+    "description": "Append Online Retail II sheets to bronze.online_retail."
+  }
+}

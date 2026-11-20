@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/platform/platformProperties.json",
+  "config": {
+    "logicalId": "d1a83125-d931-4f03-b8f5-a46b835277cb"
+  },
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_quality_checks",
+    "description": "Write quality.check_result and fail on critical checks."
+  }
+}
