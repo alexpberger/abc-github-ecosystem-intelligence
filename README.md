@@ -4,6 +4,10 @@ A Microsoft Fabric demo of a retail analytics platform. The first phase lands UC
 
 The business question is retail performance and customer intelligence: revenue, products, repeat purchase, returns, and geography.
 
+## Work in progress
+
+Phase 1 source is in the repository: notebooks, business rules, quality checks, and setup notes. Creating the Fabric workspace, uploading the spreadsheet, and running the pipeline are the remaining steps in [docs/setup.md](docs/setup.md). Phases 2–4 are planned.
+
 ## Architecture
 
 ```mermaid
