@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/platform/platformProperties.json",
+  "config": {
+    "logicalId": "9a1d6e44-2c7b-4e15-8f90-6d3b7a2c8e55"
+  },
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_snapshot",
+    "description": "Refresh tracked GitHub repositories and append bronze.repository_response."
+  }
+}

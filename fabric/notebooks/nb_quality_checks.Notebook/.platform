@@ -7,6 +7,6 @@
   "metadata": {
     "type": "Notebook",
     "displayName": "nb_quality_checks",
-    "description": "Write quality.check_result and fail on critical checks."
+    "description": "Write quality.check_result and fail when a critical GitHub check fails."
   }
 }

@@ -1,1 +1,1 @@
-"""Package marker for transformation rules."""
+"""Tracking selection and snapshot rules."""

@@ -11,169 +11,266 @@
 
 # CELL ********************
 
-# Build the Gold star schema with Spark SQL.
-# Full overwrite from silver.sales_line. Surrogate keys are assigned for this build.
-# Customer key -1 and geography key -1 are the unknown members.
+# CONTRACT_START
+LAKEHOUSE_NAME = "lh_ecosystem"
+SCHEMAS = ("bronze", "silver", "gold", "quality")
+
+SEARCH_RESPONSE_TABLE = "bronze.search_response"
+DISCOVERED_REPOSITORY_TABLE = "bronze.discovered_repository"
+REPOSITORY_RESPONSE_TABLE = "bronze.repository_response"
+
+REPOSITORY_SNAPSHOT_TABLE = "silver.repository_snapshot"
+DISCOVERY_MATCH_TABLE = "silver.discovery_match"
+TRACKED_REPOSITORY_TABLE = "silver.tracked_repository"
+
+DIM_REPOSITORY_TABLE = "gold.dim_repository"
+DIM_TECHNOLOGY_TABLE = "gold.dim_technology"
+FACT_REPOSITORY_SNAPSHOT_TABLE = "gold.fact_repository_snapshot"
+FACT_DISCOVERY_TABLE = "gold.fact_discovery"
+
+QUALITY_TABLE = "quality.check_result"
+
+DEFAULT_LOOKBACK_DAYS = 14
+MAX_TRACKED_REPOSITORIES = 500
+DEFAULT_SECRET_NAME = "github-token"
+USER_AGENT = "abc-github-ecosystem-intelligence"
+# CONTRACT_END
+
+# TECHNOLOGIES_START
+TECHNOLOGIES = (
+    ("agentic_ai", "Agentic AI"),
+    ("llm_frameworks", "LLM frameworks"),
+    ("rag", "RAG"),
+    ("mcp", "MCP"),
+    ("ai_infrastructure", "AI infrastructure"),
+    ("data_engineering", "Data engineering"),
+    ("developer_tooling", "Developer tooling"),
+)
+# TECHNOLOGIES_END
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# Build the four Gold tables with Spark SQL.
+# github_repo_id and technology_id stay stable across rebuilds.
+# A repository found by more than one technology is counted in each technology.
 
 spark.sql("CREATE SCHEMA IF NOT EXISTS gold")
+for required in (
+    REPOSITORY_SNAPSHOT_TABLE,
+    DISCOVERY_MATCH_TABLE,
+    TRACKED_REPOSITORY_TABLE,
+):
+    if not spark.catalog.tableExists(required):
+        raise RuntimeError(required + " does not exist. Run nb_silver first.")
 
-if not spark.catalog.tableExists("silver.sales_line"):
-    raise RuntimeError("silver.sales_line does not exist. Run nb_silver_clean first.")
-if spark.table("silver.sales_line").count() == 0:
-    raise RuntimeError("silver.sales_line is empty. Refusing to build Gold.")
+spark.createDataFrame(list(TECHNOLOGIES), ["technology_id", "technology_name"]).createOrReplaceTempView(
+    "technology_seed"
+)
 
 spark.sql(
     """
-    CREATE OR REPLACE TABLE gold.dim_geography AS
-    SELECT
-        CAST(-1 AS INT) AS geography_key,
-        'UNKNOWN' AS country_name
-    UNION ALL
-    SELECT
-        CAST(row_number() OVER (ORDER BY country) AS INT) AS geography_key,
-        country AS country_name
-    FROM (
-        SELECT DISTINCT country
-        FROM silver.sales_line
-        WHERE country IS NOT NULL
-            AND country <> 'UNKNOWN'
-    ) AS countries
+    CREATE OR REPLACE TABLE gold.dim_technology AS
+    SELECT technology_id, technology_name
+    FROM technology_seed
     """
 )
 
 spark.sql(
     """
-    CREATE OR REPLACE TABLE gold.dim_customer AS
-    SELECT
-        CAST(-1 AS INT) AS customer_key,
-        'UNKNOWN' AS customer_id,
-        CAST(NULL AS TIMESTAMP) AS first_invoice_date,
-        CAST(NULL AS TIMESTAMP) AS last_invoice_date,
-        CAST(NULL AS STRING) AS latest_country
-    UNION ALL
-    SELECT
-        CAST(customer_key AS INT) AS customer_key,
-        customer_id,
-        first_invoice_date,
-        last_invoice_date,
-        latest_country
-    FROM (
+    CREATE OR REPLACE TABLE gold.dim_repository AS
+    WITH current_snapshot AS (
         SELECT
-            row_number() OVER (ORDER BY customer_id) AS customer_key,
-            customer_id,
-            min(invoice_date) AS first_invoice_date,
-            max(invoice_date) AS last_invoice_date,
-            max_by(country, invoice_date) AS latest_country
-        FROM silver.sales_line
-        WHERE customer_id IS NOT NULL
-            AND customer_id <> 'UNKNOWN'
-        GROUP BY customer_id
-    ) AS customers
-    """
-)
-
-spark.sql(
-    """
-    CREATE OR REPLACE TABLE gold.dim_product AS
-    SELECT
-        CAST(row_number() OVER (ORDER BY stock_code) AS INT) AS product_key,
-        stock_code,
-        description,
-        item_type,
-        CASE WHEN item_type = 'product' THEN true ELSE false END AS is_merchandise
-    FROM (
-        SELECT
-            stock_code,
-            min(item_type) AS item_type,
-            max_by(
+            github_repo_id,
+            full_name,
+            owner_login,
+            description,
+            primary_language,
+            topics_json,
+            created_at,
+            pushed_at,
+            is_fork,
+            is_archived
+        FROM (
+            SELECT
+                github_repo_id,
+                full_name,
+                owner_login,
                 description,
-                named_struct(
-                    'has_description', CASE WHEN description IS NOT NULL THEN 1 ELSE 0 END,
-                    'invoice_date', invoice_date,
-                    'description_sort', coalesce(description, '')
-                )
-            ) AS description
-        FROM silver.sales_line
-        GROUP BY stock_code
-    ) AS products
-    """
-)
-
-spark.sql(
-    """
-    CREATE OR REPLACE TABLE gold.dim_date AS
-    WITH bounds AS (
-        SELECT
-            to_date(min(invoice_date)) AS start_date,
-            to_date(max(invoice_date)) AS end_date
-        FROM silver.sales_line
+                primary_language,
+                topics_json,
+                created_at,
+                pushed_at,
+                is_fork,
+                is_archived,
+                ROW_NUMBER() OVER (
+                    PARTITION BY github_repo_id
+                    ORDER BY observed_at DESC, collection_run_id DESC
+                ) AS recency
+            FROM silver.repository_snapshot
+            WHERE snapshot_status <> 'missing'
+        ) AS ranked
+        WHERE recency = 1
     ),
-    days AS (
-        SELECT explode(sequence(start_date, end_date, INTERVAL 1 DAY)) AS calendar_date
-        FROM bounds
+    previous_name AS (
+        SELECT github_repo_id, previous_full_name
+        FROM (
+            SELECT
+                names.github_repo_id,
+                names.full_name AS previous_full_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY names.github_repo_id
+                    ORDER BY names.observed_at DESC, names.collection_run_id DESC
+                ) AS recency
+            FROM silver.repository_snapshot AS names
+            INNER JOIN current_snapshot AS current_repo
+                ON names.github_repo_id = current_repo.github_repo_id
+            WHERE names.snapshot_status <> 'missing'
+                AND names.full_name IS NOT NULL
+                AND current_repo.full_name IS NOT NULL
+                AND names.full_name <> current_repo.full_name
+        ) AS earlier
+        WHERE recency = 1
+    ),
+    latest_discovery AS (
+        SELECT
+            github_repo_id,
+            full_name,
+            pushed_at
+        FROM (
+            SELECT
+                github_repo_id,
+                full_name,
+                pushed_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY github_repo_id
+                    ORDER BY discovered_at DESC, search_rank ASC
+                ) AS recency
+            FROM silver.discovery_match
+        ) AS ranked
+        WHERE recency = 1
     )
     SELECT
-        CAST(date_format(calendar_date, 'yyyyMMdd') AS INT) AS date_key,
-        calendar_date,
-        year(calendar_date) AS calendar_year,
-        quarter(calendar_date) AS calendar_quarter,
-        month(calendar_date) AS month_of_year,
-        date_format(calendar_date, 'MMMM') AS month_name,
-        day(calendar_date) AS day_of_month,
-        date_format(calendar_date, 'EEEE') AS day_name,
-        date_format(calendar_date, 'yyyy-MM') AS year_month
-    FROM days
+        tracked.github_repo_id,
+        COALESCE(current_repo.full_name, discovered.full_name, tracked.full_name) AS full_name,
+        previous_name.previous_full_name,
+        COALESCE(
+            current_repo.owner_login,
+            element_at(
+                split(
+                    COALESCE(current_repo.full_name, discovered.full_name, tracked.full_name),
+                    '/'
+                ),
+                1
+            )
+        ) AS owner_login,
+        current_repo.description,
+        current_repo.primary_language,
+        current_repo.topics_json,
+        current_repo.created_at,
+        COALESCE(current_repo.pushed_at, discovered.pushed_at) AS pushed_at,
+        current_repo.is_fork,
+        current_repo.is_archived,
+        tracked.tracking_status,
+        tracked.first_discovered_at
+    FROM silver.tracked_repository AS tracked
+    LEFT JOIN current_snapshot AS current_repo
+        ON tracked.github_repo_id = current_repo.github_repo_id
+    LEFT JOIN previous_name
+        ON tracked.github_repo_id = previous_name.github_repo_id
+    LEFT JOIN latest_discovery AS discovered
+        ON tracked.github_repo_id = discovered.github_repo_id
     """
 )
 
 spark.sql(
     """
-    CREATE OR REPLACE TABLE gold.fact_sales AS
+    CREATE OR REPLACE TABLE gold.fact_repository_snapshot AS
+    WITH usable AS (
+        SELECT
+            github_repo_id,
+            collection_run_id,
+            observed_at,
+            stargazers_count,
+            forks_count,
+            LAG(stargazers_count) OVER (
+                PARTITION BY github_repo_id
+                ORDER BY observed_at, collection_run_id
+            ) AS previous_stars,
+            LAG(forks_count) OVER (
+                PARTITION BY github_repo_id
+                ORDER BY observed_at, collection_run_id
+            ) AS previous_forks
+        FROM silver.repository_snapshot
+        WHERE snapshot_status <> 'missing'
+    ),
+    deltas AS (
+        SELECT
+            github_repo_id,
+            collection_run_id,
+            CASE
+                WHEN previous_stars IS NULL OR stargazers_count IS NULL THEN NULL
+                ELSE stargazers_count - previous_stars
+            END AS star_delta,
+            CASE
+                WHEN previous_forks IS NULL OR forks_count IS NULL THEN NULL
+                ELSE forks_count - previous_forks
+            END AS fork_delta
+        FROM usable
+    )
     SELECT
-        sha2(
-            concat_ws(
-                '||',
-                s.invoice,
-                s.stock_code,
-                coalesce(s.description, ''),
-                cast(s.quantity AS STRING),
-                cast(s.unit_price AS STRING),
-                date_format(s.invoice_date, 'yyyy-MM-dd HH:mm:ss'),
-                coalesce(s.customer_id, ''),
-                coalesce(s.country, '')
-            ),
-            256
-        ) AS sales_line_key,
-        s.invoice AS invoice_number,
-        CAST(date_format(s.invoice_date, 'yyyyMMdd') AS INT) AS date_key,
-        p.product_key,
-        coalesce(c.customer_key, -1) AS customer_key,
-        coalesce(g.geography_key, -1) AS geography_key,
-        s.quantity,
-        s.unit_price,
-        s.net_amount,
-        s.is_cancellation,
-        s.line_kind,
-        s.item_type
-    FROM silver.sales_line AS s
-    INNER JOIN gold.dim_product AS p
-        ON s.stock_code = p.stock_code
-    LEFT JOIN gold.dim_customer AS c
-        ON s.customer_id = c.customer_id
-    LEFT JOIN gold.dim_geography AS g
-        ON s.country = g.country_name
+        snapshot.github_repo_id,
+        snapshot.collection_run_id,
+        snapshot.observed_at,
+        snapshot.stargazers_count,
+        snapshot.forks_count,
+        snapshot.subscribers_count,
+        snapshot.open_issues_count,
+        deltas.star_delta,
+        deltas.fork_delta,
+        snapshot.primary_language,
+        snapshot.topics_json,
+        snapshot.is_fork,
+        snapshot.is_archived,
+        CASE
+            WHEN snapshot.created_at IS NULL OR snapshot.observed_at IS NULL THEN NULL
+            ELSE datediff(to_date(snapshot.observed_at), to_date(snapshot.created_at))
+        END AS days_since_created,
+        CASE
+            WHEN snapshot.pushed_at IS NULL OR snapshot.observed_at IS NULL THEN NULL
+            ELSE datediff(to_date(snapshot.observed_at), to_date(snapshot.pushed_at))
+        END AS days_since_push,
+        snapshot.snapshot_status
+    FROM silver.repository_snapshot AS snapshot
+    LEFT JOIN deltas
+        ON snapshot.github_repo_id = deltas.github_repo_id
+        AND snapshot.collection_run_id = deltas.collection_run_id
     """
 )
 
-for table_name in (
-    "gold.dim_date",
-    "gold.dim_product",
-    "gold.dim_customer",
-    "gold.dim_geography",
-    "gold.fact_sales",
-):
-    row_count = spark.table(table_name).count()
-    print("gold_table=" + table_name + " rows=" + str(row_count))
+spark.sql(
+    """
+    CREATE OR REPLACE TABLE gold.fact_discovery AS
+    SELECT
+        github_repo_id,
+        technology_id,
+        query_id,
+        collection_run_id,
+        discovered_at,
+        search_rank,
+        result_cap_hit,
+        incomplete_results
+    FROM silver.discovery_match
+    """
+)
+
+print("gold_status=replaced")
 
 # METADATA ********************
 

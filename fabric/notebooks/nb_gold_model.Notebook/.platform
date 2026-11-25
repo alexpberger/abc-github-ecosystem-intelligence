@@ -7,6 +7,6 @@
   "metadata": {
     "type": "Notebook",
     "displayName": "nb_gold_model",
-    "description": "Overwrite the Gold star schema from silver.sales_line."
+    "description": "Rebuild the four Gold tables for repository snapshots and discovery."
   }
 }

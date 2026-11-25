@@ -1,82 +1,103 @@
-from decimal import Decimal
+import pytest
 
-from src.quality.checks import CRITICAL_CHECKS, is_critical
+from src.quality.checks import CRITICAL_CHECKS, WARNING_CHECKS, is_critical
 from src.transformations.rules import (
-    classify_item_type,
-    is_cancellation,
-    line_kind,
-    net_amount,
-    normalize_customer_id,
+    metric_delta,
+    resolve_snapshot_series,
+    select_tracked,
+    snapshot_from_response,
 )
 
 
-def test_cancellation_prefix_is_case_insensitive():
-    assert is_cancellation("C536548")
-    assert is_cancellation("c536548")
-    assert is_cancellation("  C1")
-    assert not is_cancellation("536548")
-    assert not is_cancellation("A563185")
-    assert not is_cancellation(None)
-    assert not is_cancellation("")
-    assert not is_cancellation("   ")
+def test_select_tracked_keeps_existing_repos_and_ranks_newcomers():
+    candidates = [
+        {"github_repo_id": 3, "stargazers_count": 5, "pushed_at": "2026-11-01T00:00:00Z"},
+        {"github_repo_id": 3, "stargazers_count": 9, "pushed_at": "2026-11-02T00:00:00Z"},
+        {"github_repo_id": 2, "stargazers_count": 9, "pushed_at": "2026-11-03T00:00:00Z"},
+        {"github_repo_id": 4, "stargazers_count": 1, "pushed_at": "2026-11-04T00:00:00Z"},
+        {"github_repo_id": None, "stargazers_count": 100, "pushed_at": None},
+    ]
+    selected = select_tracked(candidates, already_tracked_ids=[8], max_tracked=2)
+    assert selected["tracked"] == (2, 8)
+    assert selected["discovered_only"] == (3, 4)
 
 
-def test_line_kind_distinguishes_cancellations_and_adjustments():
-    assert line_kind("C536548") == "cancellation"
-    assert line_kind("a563185") == "adjustment"
-    assert line_kind("489434") == "sale"
-    assert line_kind(None) == "sale"
-    assert line_kind("") == "sale"
+def test_select_tracked_does_not_evict_when_the_cap_is_already_full():
+    selected = select_tracked(
+        [{"github_repo_id": 5, "stargazers_count": 1000, "pushed_at": "2026-11-01T00:00:00Z"}],
+        already_tracked_ids=[1, 2],
+        max_tracked=1,
+    )
+    assert selected["tracked"] == (1, 2)
+    assert selected["discovered_only"] == (5,)
+    with pytest.raises(ValueError):
+        select_tracked([], [], -1)
 
 
-def test_customer_id_normalizes_missing_and_decimal_zero():
-    assert normalize_customer_id("13085.0") == "13085"
-    assert normalize_customer_id("13085.00") == "13085"
-    assert normalize_customer_id(13085.0) == "13085"
-    assert normalize_customer_id(13085) == "13085"
-    assert normalize_customer_id("17850") == "17850"
-    assert normalize_customer_id(None) is None
-    assert normalize_customer_id("") is None
-    assert normalize_customer_id("  ") is None
-    assert normalize_customer_id("nan") is None
-    assert normalize_customer_id("None") is None
-    assert normalize_customer_id(float("nan")) is None
+def test_equal_stars_prefer_the_later_push_then_the_smaller_id():
+    candidates = [
+        {"github_repo_id": 20, "stargazers_count": 4, "pushed_at": "2026-11-02T00:00:00Z"},
+        {"github_repo_id": 10, "stargazers_count": 4, "pushed_at": "2026-11-02T00:00:00Z"},
+        {"github_repo_id": 30, "stargazers_count": 4, "pushed_at": "2026-11-01T00:00:00Z"},
+    ]
+    selected = select_tracked(candidates, [], max_tracked=2)
+    assert selected["tracked"] == (10, 20)
+    assert selected["discovered_only"] == (30,)
 
 
-def test_item_type_classifies_products_and_known_charges():
-    assert classify_item_type("85123A") == "product"
-    assert classify_item_type("85123a") == "product"
-    assert classify_item_type("POST") == "postage"
-    assert classify_item_type("post") == "postage"
-    assert classify_item_type("DOT") == "postage"
-    assert classify_item_type("C2") == "carriage"
-    assert classify_item_type("m") == "manual"
-    assert classify_item_type("D") == "discount"
-    assert classify_item_type("BANK CHARGES") == "fee"
-    assert classify_item_type("AMAZONFEE") == "fee"
-    assert classify_item_type("CRUK") == "fee"
-    assert classify_item_type("S") == "sample"
-    assert classify_item_type("gift_0001_10") == "gift_voucher"
-    assert classify_item_type("GIFT") == "gift_voucher"
-    assert classify_item_type("B") == "adjustment"
-    assert classify_item_type("ADJUST") == "adjustment"
-    assert classify_item_type("ADJUST2") == "adjustment"
-    assert classify_item_type("1234") == "non_standard"
-    assert classify_item_type("TEST001") == "non_standard"
-    assert classify_item_type(None) == "non_standard"
-    assert classify_item_type("") == "non_standard"
+def test_snapshot_series_carries_304_and_clears_404():
+    first = {
+        "status": 200,
+        "github_repo_id": 101,
+        "etag": '"one"',
+        "body": {
+            "id": 101,
+            "full_name": "example/agent-kit",
+            "stargazers_count": 12,
+            "forks_count": 2,
+            "owner": {"login": "example"},
+            "topics": ["ai-agents"],
+            "fork": False,
+            "archived": False,
+        },
+    }
+    unchanged = {
+        "status": 304,
+        "github_repo_id": 101,
+        "etag": '"two"',
+        "full_name": "example/agent-kit",
+    }
+    missing = {
+        "status": 404,
+        "github_repo_id": 101,
+        "etag": None,
+        "full_name": "example/agent-kit",
+    }
+    resolved = resolve_snapshot_series([first, unchanged, missing])
+    assert resolved[0]["snapshot_status"] == "refreshed"
+    assert resolved[0]["stargazers_count"] == 12
+    assert resolved[1]["snapshot_status"] == "unchanged"
+    assert resolved[1]["stargazers_count"] == 12
+    assert resolved[1]["etag"] == '"two"'
+    assert resolved[2]["snapshot_status"] == "missing"
+    assert resolved[2]["stargazers_count"] is None
+    assert resolved[2]["full_name"] == "example/agent-kit"
+    with pytest.raises(ValueError):
+        snapshot_from_response({"status": 304, "etag": '"x"'}, None)
+    with pytest.raises(ValueError):
+        snapshot_from_response({"status": 500}, None)
 
 
-def test_net_amount_keeps_the_sign_of_the_quantity():
-    assert net_amount(-1, Decimal("2.50")) == Decimal("-2.5000")
-    assert net_amount(2, Decimal("1.5")) == Decimal("3.0000")
-    assert net_amount(3, 2) == Decimal("6.0000")
-    assert net_amount(None, Decimal("1")) is None
-    assert net_amount(1, None) is None
+def test_metric_delta_allows_a_decrease_and_skips_nulls():
+    assert metric_delta(8, 10) == -2
+    assert metric_delta(10, 10) == 0
+    assert metric_delta(None, 10) is None
+    assert metric_delta(10, None) is None
 
 
 def test_critical_check_names_are_stable():
     assert "fact_matches_silver" in CRITICAL_CHECKS
-    assert "unknown_customer_present" in CRITICAL_CHECKS
-    assert is_critical("bronze_batch_not_empty")
-    assert not is_critical("both_source_sheets_present")
+    assert "tracked_within_cap" in CRITICAL_CHECKS
+    assert "search_result_cap_hit" in WARNING_CHECKS
+    assert is_critical("unique_snapshot_grain")
+    assert not is_critical("discovered_not_tracked")

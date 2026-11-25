@@ -1,86 +1,85 @@
 # Data model
 
-Phase 1 publishes one fact at sales-line grain and four dimensions. Column lists are in [data-dictionary.md](data-dictionary.md).
+Phase 1 publishes two dimensions and two facts. Column lists are in [data-dictionary.md](data-dictionary.md).
 
-The source workbook is not modified. Bronze keeps its columns. Silver and Gold are derived.
+Bronze keeps the API responses. Silver and Gold are derived from every Bronze batch, not only the latest one.
 
 ## Grain
 
-`silver.sales_line` and `gold.fact_sales` are one row per distinct business line in the latest Bronze batch, after incomplete lines are removed.
+`silver.repository_snapshot` and `gold.fact_repository_snapshot` are one row per repository per `collection_run_id`.
 
-A business line is:
+`silver.discovery_match` and `gold.fact_discovery` are one row per repository, catalogue query, and `collection_run_id`.
 
-`invoice`, `stock_code`, `description`, `quantity`, `invoice_date`, `unit_price`, `customer_id`, `country`
+`gold.dim_repository` is one row per repository ever discovered or snapshotted. `gold.dim_technology` is one row per focus area in the catalogue.
 
-The two yearly sheets overlap on 1–9 December 2010. Exact matches on those columns are kept once.
+`github_repo_id` is GitHub's numeric repository id. It does not change when the repository is renamed. `technology_id` is a stable string from the catalogue, such as `agentic_ai`.
 
 ## Layers
 
 ### Bronze
 
-`bronze.online_retail` is append-only. Each load stamps:
+Bronze is append-only. A run that is already present is not requested again.
 
-- `source_file`
-- `source_sheet` (`Year 2009-2010` or `Year 2010-2011`)
-- `ingestion_timestamp` (one value for the batch)
-- `ingestion_batch_id` (notebook parameter, default `online_retail_ii_full`)
+`bronze.search_response` stores one GitHub search page. Pages from a window that was split again are kept with `keep_items = false` so the audit trail remains, without discovering the same repository twice. Leaf pages have `keep_items = true`. Each row records the lookback and the tracking cap used for that run.
 
-Source values are stored as strings so the landing step does not recast numbers or dates. Reloading the same batch id is a no-op. A new id appends another snapshot. Silver reads only the latest snapshot.
+`bronze.discovered_repository` stores one catalogue hit from a leaf page. The same repository can appear under more than one query.
+
+`bronze.repository_response` stores one monitoring response. `response_json` is null when GitHub returns `304 Not Modified`. The ETag and the `full_name` used for the next call are columns, because a `304` has no body.
+
+`collection_run_id` is the pipeline parameter. A blank discover parameter generates a UTC timestamp. Snapshot, when its parameter is blank, uses the latest discovery run. A scheduled pipeline should pass one shared id, normally the UTC date, so a retry on the same day does not create a second snapshot.
 
 ### Silver
 
-`nb_silver_clean` overwrites `silver.sales_line` from that latest batch.
+`nb_silver` overwrites the Silver tables from all Bronze rows.
 
-- Names are snake_case.
-- Stock codes are trimmed and uppercased.
-- Customer ids lose a trailing `.0` and blank values become null.
-- Quantity becomes a whole number. Unit price becomes `decimal(18,4)`. Invoice date becomes a timestamp. Excel serials in the range 35000–60000 are accepted, then common datetime strings. A quantity or price that is not a plain number is treated as missing, and that line is excluded. The original text stays in Bronze.
-- `line_kind` is `cancellation` when the invoice starts with `C`, `adjustment` when it starts with `A`, otherwise `sale`.
-- `is_cancellation` is true only for the `C` prefix.
-- `item_type` follows [decisions.md](decisions.md) D6.
-- `net_amount` is signed quantity times unit price.
+- `repository_snapshot` parses a `200` body. A `304` copies the latest earlier `200` for that repository and is marked `unchanged`. A `404` is marked `missing`, keeps the requested name, and clears the metrics. A `304` with no earlier body fails the notebook.
+- `discovery_match` keeps the best search rank for each repository, query, and run.
+- `tracked_repository` marks a repository `tracked` once any monitoring response exists. Everything else that was discovered is `discovered_only`.
 
-Lines missing invoice, stock code, invoice date, quantity, or unit price are excluded. They are not written to an error table in Phase 1. The quality notebook recomputes the exclusion and fails if Silver's count is not explained by duplicates plus those invalid lines.
+Topics are a JSON array string. The SQL analytics endpoint does not expose a Delta array column, and a string stays readable there and in a later DuckDB job. License, default branch, and per-language byte counts stay in the raw JSON.
 
 ### Gold
 
-`nb_gold_model` overwrites the Gold tables with Spark SQL.
+`nb_gold_model` overwrites the four Gold tables with Spark SQL.
 
 | Table | Grain | Key |
 | --- | --- | --- |
-| `gold.dim_date` | One calendar day from the earliest invoice date through the latest | `date_key` as `yyyyMMdd` |
-| `gold.dim_product` | One stock code | `product_key` |
-| `gold.dim_customer` | One customer id, plus the unknown member | `customer_key` |
-| `gold.dim_geography` | One country, plus the unknown member | `geography_key` |
-| `gold.fact_sales` | One Silver line | `sales_line_key` (SHA-256 of the business columns) |
+| `gold.dim_technology` | One catalogue focus area | `technology_id` |
+| `gold.dim_repository` | One repository | `github_repo_id` |
+| `gold.fact_repository_snapshot` | One repository in one collection run | `github_repo_id`, `collection_run_id` |
+| `gold.fact_discovery` | One repository, query, and run | `github_repo_id`, `query_id`, `collection_run_id` |
 
-Surrogate keys other than the unknown members come from `row_number()` at build time. They are stable only for a given overwrite, not across historical Gold versions. Phase 1 does not keep Gold history.
+`dim_repository` uses the latest non-missing snapshot for the current description, language, topics, and flags. `previous_full_name` is the most recent different name, when the repository was renamed. A repository that was discovered but not snapshotted still has a row, with attributes taken from discovery.
 
-`dim_product.description` prefers the latest non-null description for that stock code. `is_merchandise` is true when `item_type` is `product`.
+`fact_repository_snapshot.star_delta` is the star count minus the previous non-missing snapshot. It is null on the first observation and on a missing row. A negative delta is a real change. `fork_delta` follows the same rule. `days_since_created` and `days_since_push` are calendar days between the observation and those timestamps.
 
-`dim_customer` stores the first and last invoice timestamps and the country on the latest invoice. The fact does not use that country. Geography on the fact comes from the line.
-
-There is no category attribute. See D5 in [decisions.md](decisions.md).
+There is no calendar, owner, language, or topic dimension. Group by `observed_at`, `primary_language`, or an `OPENJSON` of `topics_json`.
 
 ### Quality
 
 `quality.check_result` is overwritten each run. A failed critical check fails the notebook, which fails the pipeline activity. Check names are listed in [AGENTS.md](../AGENTS.md).
 
-## How the business questions are answered
+## How the questions are answered
 
-Phase 1 does not pre-aggregate these. [validation.sql](validation.sql) shows the T-SQL shape. Phase 2 can turn them into DAX measures.
+Phase 1 does not pre-aggregate these. [validation.sql](validation.sql) shows the T-SQL shape.
 
-| Question | Filter or grouping |
+| Question | Query shape |
 | --- | --- |
-| Revenue development | `SUM(net_amount)` by `dim_date` |
-| Product performance | `fact_sales` joined to `dim_product`, usually `is_merchandise = 1` |
-| Returns and cancellations | `is_cancellation` or `line_kind` |
-| Geography | `dim_geography.country_name` |
-| Repeat purchase | Known customers (`customer_key <> -1`) with more than one distinct `invoice_number` on non-cancellation lines |
-| Customers with no id | `customer_key = -1` |
+| Which repositories gained stars | `fact_repository_snapshot.star_delta` joined to `dim_repository` |
+| Where new repositories appeared | `fact_discovery` joined to `dim_technology`, grouped by week |
+| Growth inside a technology | Distinct `(github_repo_id, technology_id)` from `fact_discovery`, joined to the latest snapshot |
+| Language mix | `GROUP BY primary_language` on `dim_repository` |
+| Topic mix | `OPENJSON(topics_json)` on `fact_repository_snapshot` |
+| Repositories left outside the cap | `dim_repository.tracking_status = 'discovered_only'` |
 
-Adjustments (`line_kind = 'adjustment'`) are neither sales nor cancellations. Leave them out of gross-sales and return measures.
+A repository found by two queries belongs to two technologies. Summing stars across technologies counts that repository more than once. The validation script says so next to the query.
 
 ## Keys and orphans
 
-Every fact row must find a date, product, customer, and geography key. Missing customer and country resolve to key `-1`. Missing product or date is a failed load, because Silver already requires stock code and invoice date, and the calendar covers every date in Silver.
+Every snapshot fact row must find a `dim_repository` row. Every discovery fact row must find both a repository and a technology. `dim_technology` is seeded from the catalogue, so the seven focus areas exist even when a run discovered nothing.
+
+Missing language and missing topics stay null. They are not given an unknown member.
+
+## What the history does not contain
+
+GitHub does not provide the past star series. The first snapshot records the metrics at collection time, including for repositories created during the lookback. Older star counts are not reconstructed. Search can also omit a repository until GitHub has indexed it, or when a one-day window still has more than 1,000 hits. Those gaps are stored as `result_cap_hit` and `incomplete_results` rather than treated as a complete list.

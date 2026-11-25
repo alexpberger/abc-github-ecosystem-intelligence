@@ -4,21 +4,24 @@ A critical failure fails the notebook. A warning is written and does not stop th
 """
 
 CRITICAL_CHECKS = (
-    "bronze_batch_not_empty",
-    "silver_exclusions_accounted",
+    "repository_responses_complete",
+    "unique_snapshot_grain",
+    "snapshot_repo_id_present",
     "fact_matches_silver",
-    "no_orphan_date_keys",
-    "no_orphan_product_keys",
-    "no_orphan_customer_keys",
-    "no_orphan_geography_keys",
-    "unique_product_keys",
-    "unique_customer_keys",
-    "net_amount_matches_inputs",
-    "unknown_customer_present",
+    "no_orphan_snapshot_repository",
+    "no_orphan_discovery_technology",
+    "no_orphan_discovery_repository",
+    "stars_and_forks_non_negative",
+    "tracked_within_cap",
+    "tracked_repos_snapshotted",
 )
 
-WARNING_CHECKS = ("both_source_sheets_present",)
+WARNING_CHECKS = (
+    "search_result_cap_hit",
+    "search_incomplete_results",
+    "discovered_not_tracked",
+)
 
 
-def is_critical(check_name: str) -> bool:
+def is_critical(check_name):
     return check_name in CRITICAL_CHECKS

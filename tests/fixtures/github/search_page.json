@@ -1,0 +1,13 @@
+{
+  "total_count": 1,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 101,
+      "full_name": "example/agent-kit",
+      "stargazers_count": 12,
+      "pushed_at": "2026-11-21T08:30:00Z",
+      "description": "A small agent toolkit"
+    }
+  ]
+}

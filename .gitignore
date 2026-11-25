@@ -1,6 +1,6 @@
-# Raw datasets
-data/raw/*
-!data/raw/.gitkeep
+# Local API caches and exported dumps. Committed fixtures live under tests/fixtures.
+data/cache/
+data/landing/
 
 # Secrets and local environments
 .env

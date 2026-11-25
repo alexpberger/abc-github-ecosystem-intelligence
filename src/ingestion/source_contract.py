@@ -1,30 +1,29 @@
-"""Source file and column contract for Online Retail II.
+"""Lakehouse names and ingestion limits for GitHub Ecosystem Intelligence.
 
-The Bronze notebook repeats these constants. tests/unit/test_notebook_parity.py
-checks that the two copies still match.
+Notebooks repeat the block between the markers. The parity test compares it.
 """
 
-SOURCE_FILE_NAME = "online_retail_II.xlsx"
-SOURCE_RELATIVE_PATH = "Files/raw/online_retail_II.xlsx"
-SHEET_NAMES = ("Year 2009-2010", "Year 2010-2011")
-SOURCE_COLUMNS = (
-    "Invoice",
-    "StockCode",
-    "Description",
-    "Quantity",
-    "InvoiceDate",
-    "Price",
-    "Customer ID",
-    "Country",
-)
-DEFAULT_BATCH_ID = "online_retail_ii_full"
-BRONZE_TABLE = "bronze.online_retail"
-SILVER_TABLE = "silver.sales_line"
-FACT_TABLE = "gold.fact_sales"
-DIM_DATE_TABLE = "gold.dim_date"
-DIM_PRODUCT_TABLE = "gold.dim_product"
-DIM_CUSTOMER_TABLE = "gold.dim_customer"
-DIM_GEOGRAPHY_TABLE = "gold.dim_geography"
-QUALITY_TABLE = "quality.check_result"
-LAKEHOUSE_NAME = "lh_retail"
+# CONTRACT_START
+LAKEHOUSE_NAME = "lh_ecosystem"
 SCHEMAS = ("bronze", "silver", "gold", "quality")
+
+SEARCH_RESPONSE_TABLE = "bronze.search_response"
+DISCOVERED_REPOSITORY_TABLE = "bronze.discovered_repository"
+REPOSITORY_RESPONSE_TABLE = "bronze.repository_response"
+
+REPOSITORY_SNAPSHOT_TABLE = "silver.repository_snapshot"
+DISCOVERY_MATCH_TABLE = "silver.discovery_match"
+TRACKED_REPOSITORY_TABLE = "silver.tracked_repository"
+
+DIM_REPOSITORY_TABLE = "gold.dim_repository"
+DIM_TECHNOLOGY_TABLE = "gold.dim_technology"
+FACT_REPOSITORY_SNAPSHOT_TABLE = "gold.fact_repository_snapshot"
+FACT_DISCOVERY_TABLE = "gold.fact_discovery"
+
+QUALITY_TABLE = "quality.check_result"
+
+DEFAULT_LOOKBACK_DAYS = 14
+MAX_TRACKED_REPOSITORIES = 500
+DEFAULT_SECRET_NAME = "github-token"
+USER_AGENT = "abc-github-ecosystem-intelligence"
+# CONTRACT_END

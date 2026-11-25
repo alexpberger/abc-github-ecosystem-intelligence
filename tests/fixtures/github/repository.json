@@ -1,0 +1,18 @@
+{
+  "id": 101,
+  "full_name": "example/agent-kit",
+  "description": "A small agent toolkit",
+  "language": "Python",
+  "topics": ["ai-agents", "llm"],
+  "created_at": "2026-11-01T00:00:00Z",
+  "updated_at": "2026-11-20T12:00:00Z",
+  "pushed_at": "2026-11-21T08:30:00Z",
+  "stargazers_count": 12,
+  "forks_count": 2,
+  "open_issues_count": 3,
+  "fork": false,
+  "archived": false,
+  "owner": {
+    "login": "example"
+  }
+}

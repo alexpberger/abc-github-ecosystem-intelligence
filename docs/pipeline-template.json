@@ -1,9 +1,9 @@
 {
   "properties": {
-    "description": "Phase 1 medallion pipeline for Online Retail II. Replace every REPLACE_WITH placeholder before copying this file to fabric/pipelines/pl_retail_medallion.DataPipeline/pipeline-content.json. Do not sync it until the ids are real.",
+    "description": "Phase 1 medallion pipeline for GitHub Ecosystem Intelligence. Replace every REPLACE_WITH placeholder before copying this file to fabric/pipelines/pl_github_ecosystem.DataPipeline/pipeline-content.json. Do not sync it until the ids are real. Both collection_run_id values must be the same pipeline parameter.",
     "activities": [
       {
-        "name": "Bronze ingest",
+        "name": "Discover",
         "type": "TridentNotebook",
         "dependsOn": [],
         "policy": {
@@ -14,26 +14,38 @@
           "secureInput": false
         },
         "typeProperties": {
-          "notebookId": "REPLACE_WITH_NB_BRONZE_INGEST_ID",
+          "notebookId": "REPLACE_WITH_NB_DISCOVER_ID",
           "workspaceId": "REPLACE_WITH_WORKSPACE_ID",
           "parameters": {
-            "ingestion_batch_id": {
-              "value": "online_retail_ii_full",
+            "collection_run_id": {
+              "value": "REPLACE_WITH_COLLECTION_RUN_ID",
               "type": "string"
             },
-            "source_relative_path": {
-              "value": "Files/raw/online_retail_II.xlsx",
+            "lookback_days": {
+              "value": "14",
+              "type": "string"
+            },
+            "max_tracked_repositories": {
+              "value": "500",
+              "type": "string"
+            },
+            "key_vault_url": {
+              "value": "REPLACE_WITH_KEY_VAULT_URL",
+              "type": "string"
+            },
+            "secret_name": {
+              "value": "github-token",
               "type": "string"
             }
           }
         }
       },
       {
-        "name": "Silver clean",
+        "name": "Snapshot",
         "type": "TridentNotebook",
         "dependsOn": [
           {
-            "activity": "Bronze ingest",
+            "activity": "Discover",
             "dependencyConditions": ["Succeeded"]
           }
         ],
@@ -45,7 +57,42 @@
           "secureInput": false
         },
         "typeProperties": {
-          "notebookId": "REPLACE_WITH_NB_SILVER_CLEAN_ID",
+          "notebookId": "REPLACE_WITH_NB_SNAPSHOT_ID",
+          "workspaceId": "REPLACE_WITH_WORKSPACE_ID",
+          "parameters": {
+            "collection_run_id": {
+              "value": "REPLACE_WITH_COLLECTION_RUN_ID",
+              "type": "string"
+            },
+            "key_vault_url": {
+              "value": "REPLACE_WITH_KEY_VAULT_URL",
+              "type": "string"
+            },
+            "secret_name": {
+              "value": "github-token",
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "Silver",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Snapshot",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "notebookId": "REPLACE_WITH_NB_SILVER_ID",
           "workspaceId": "REPLACE_WITH_WORKSPACE_ID"
         }
       },
@@ -54,7 +101,7 @@
         "type": "TridentNotebook",
         "dependsOn": [
           {
-            "activity": "Silver clean",
+            "activity": "Silver",
             "dependencyConditions": ["Succeeded"]
           }
         ],

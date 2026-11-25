@@ -2,11 +2,11 @@
   "version": "2.0",
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/platform/platformProperties.json",
   "config": {
-    "logicalId": "166aabf5-9b72-47de-96c7-83f07351ea00"
+    "logicalId": "4e8b1c72-5a09-4d6f-b381-2f7c9d0e6a14"
   },
   "metadata": {
     "type": "Notebook",
-    "displayName": "nb_bronze_ingest",
-    "description": "Append Online Retail II sheets to bronze.online_retail."
+    "displayName": "nb_silver",
+    "description": "Rebuild typed Silver snapshots, discovery matches, and the tracking registry."
   }
 }

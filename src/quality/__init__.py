@@ -1,1 +1,1 @@
-"""Package marker for quality-check definitions."""
+"""Data-quality check names."""

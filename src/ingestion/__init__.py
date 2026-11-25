@@ -1,1 +1,1 @@
-"""Package marker for the ingestion contract."""
+"""GitHub ingestion client, query catalogue, and payload parsing."""

@@ -2,11 +2,11 @@
   "version": "2.0",
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/platform/platformProperties.json",
   "config": {
-    "logicalId": "a9280ff2-0315-45fc-9357-f40be5062f9f"
+    "logicalId": "7c2e4a1b-6d58-4f0e-9a33-1b8e5c4d2f10"
   },
   "metadata": {
     "type": "Notebook",
-    "displayName": "nb_silver_clean",
-    "description": "Rebuild silver.sales_line from the latest Bronze batch."
+    "displayName": "nb_discover",
+    "description": "Search GitHub for catalogue repositories and append bronze.search_response."
   }
 }

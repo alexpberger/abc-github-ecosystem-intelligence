@@ -1,6 +1,6 @@
 # Design system
 
-Phase 1 has no user interface. These tokens are recorded so Phase 2 can theme Power BI from the same identity as the rest of the consultancy demos.
+Phase 1 has no user interface. These tokens are recorded so a later visualisation can use the same identity as the rest of the consultancy demos.
 
 The source is `abc-prediction-platform`, files `frontend/src/styles/tokens.css` and `frontend/src/styles/base.css`. Do not change that project from this repository. Do not introduce a second palette.
 
@@ -30,8 +30,6 @@ The source is `abc-prediction-platform`, files `frontend/src/styles/tokens.css` 
 - Corner radius: 2px.
 - Borders: 1px `rule`, or 1px `accent` on a primary action.
 
-## Phase 2
+## Later visualisation
 
-When the Power BI report is built, translate this table into a Power BI theme JSON. Map `ink` to foreground text, `paper` and `page` to background, `accent` to the primary data colour, and `rule` to gridlines. Use Newsreader for titles if the tenant can reach it, and Source Sans 3 or Segoe UI for labels.
-
-Until that phase, do not add a `.json` theme file or a report item.
+Phase 1 does not add a theme file or a report. A later interface can map `ink` to text, `paper` and `page` to background, `accent` to the primary data colour, and `rule` to borders or gridlines. Use Newsreader for titles where it is available, and Source Sans 3 or Segoe UI for labels.
